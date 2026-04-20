@@ -38,6 +38,21 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Custom output directory (defaults to <workspace>/output)",
     )
+    parser.add_argument(
+        "--source-lang",
+        default=None,
+        help="Source language for transcript (e.g. zh, en, auto).",
+    )
+    parser.add_argument(
+        "--target-lang",
+        default=None,
+        help="Target language for translation (e.g. vi, en).",
+    )
+    parser.add_argument(
+        "--zh-to-vi",
+        action="store_true",
+        help="Shortcut for --source-lang zh --target-lang vi.",
+    )
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
         "--dry-run",
@@ -64,6 +79,14 @@ def main() -> None:
         output_dir=args.output_dir,
         dry_run=args.dry_run,
     )
+    if args.zh_to_vi:
+        config.transcript_lang = "zh"
+        config.target_lang = "vi"
+    else:
+        if args.source_lang:
+            config.transcript_lang = args.source_lang.strip()
+        if args.target_lang:
+            config.target_lang = args.target_lang.strip()
     config.ensure_directories()
 
     orchestrator = PipelineOrchestrator(config=config)

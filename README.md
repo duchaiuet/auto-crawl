@@ -77,6 +77,27 @@ douyin-pipeline \
   --dry-run
 ```
 
+### 1.1) Chay nhanh Trung -> Viet
+
+```bash
+douyin-pipeline \
+  --url "https://www.douyin.com/video/xxxxxxxxxxxx" \
+  --caption-template "{translated_text}" \
+  --hashtags viet-hoa \
+  --zh-to-vi \
+  --dry-run
+```
+
+Hoac chi dinh thu cong:
+
+```bash
+douyin-pipeline \
+  --url "https://www.douyin.com/video/xxxxxxxxxxxx" \
+  --source-lang zh \
+  --target-lang vi \
+  --dry-run
+```
+
 ### 2) Publish that len TikTok
 
 ```bash

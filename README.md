@@ -158,6 +158,41 @@ npm run build
 npm run start:dev
 ```
 
+## Run with Docker
+
+### 1) Prepare env
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Update `OPENAI_API_KEY` in `backend/.env` if you want real caption generation.
+
+### 2) Start full stack
+
+```bash
+docker compose up -d --build
+```
+
+This starts:
+- `app` (NestJS API) on `http://localhost:3000`
+- `postgres` on `localhost:5432`
+- `redis` on `localhost:6379`
+
+### 3) Run Prisma migrate/generate inside container
+
+```bash
+docker compose exec app npx prisma generate
+docker compose exec app npx prisma migrate dev --name init
+```
+
+### 4) View logs / stop
+
+```bash
+docker compose logs -f app
+docker compose down
+```
+
 Trigger crawl:
 
 ```bash

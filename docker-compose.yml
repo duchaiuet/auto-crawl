@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: svp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: short_video_pipeline
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d short_video_pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: svp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: svp-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/short_video_pipeline?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      VIDEO_STORAGE_DIR: /app/storage
+      CRAWL_BATCH_SIZE: ${CRAWL_BATCH_SIZE:-30}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      MAX_JOB_ATTEMPTS: ${MAX_JOB_ATTEMPTS:-3}
+      JOB_RETRY_BACKOFF_MS: ${JOB_RETRY_BACKOFF_MS:-2000}
+      CRAWL_INTERVAL_HOURS: ${CRAWL_INTERVAL_HOURS:-6}
+      CRAWL_MIN_LIKES: ${CRAWL_MIN_LIKES:-50000}
+      CRAWL_MIN_COMMENTS: ${CRAWL_MIN_COMMENTS:-5000}
+      TOP_PERCENT: ${TOP_PERCENT:-0.2}
+      CROP_WATERMARK: ${CROP_WATERMARK:-true}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/storage:/app/storage
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,13 +1,12 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JobType, VideoStatus } from '@prisma/client';
+import { VideoStatus } from '@prisma/client';
 import { Queue } from 'bullmq';
 
 import { CaptionsService } from '../captions/captions.service';
 import { AppLoggerService } from '../common/logging/app-logger.service';
 import { MetricsService } from '../common/monitoring/metrics.service';
-import { JobsService } from '../jobs/jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_BACKOFF_MS,
@@ -25,7 +24,6 @@ export class PublishService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly captionsService: CaptionsService,
-    private readonly jobsService: JobsService,
     private readonly logger: AppLoggerService,
     private readonly metrics: MetricsService,
     private readonly configService: ConfigService,
@@ -58,7 +56,7 @@ export class PublishService {
         throw new Error(`No processed video for ${input.videoId}`);
       }
 
-      const queueJob = await this.publishQueue.add(
+      await this.publishQueue.add(
         JOB_NAMES.PUBLISH_VARIANT,
         {
           videoId: input.videoId,
@@ -73,18 +71,6 @@ export class PublishService {
           },
         },
       );
-      await this.jobsService.createJob({
-        queueJobId: String(queueJob.id ?? ''),
-        jobType: JobType.PUBLISH,
-        status: 'PENDING',
-        payload: {
-          videoId: input.videoId,
-          processedVideoId: processedVideo.id,
-          captionId: caption.id,
-        },
-        videoId: input.videoId,
-        maxAttempts: attempts,
-      });
     }
 
     this.metrics.incrementCounter('queue.publish.enqueued', captions.length);

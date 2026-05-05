@@ -6,7 +6,6 @@ import { Queue } from 'bullmq';
 
 import { AppLoggerService } from '../common/logging/app-logger.service';
 import { MetricsService } from '../common/monitoring/metrics.service';
-import { JobsService } from '../jobs/jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_BACKOFF_MS,
@@ -43,7 +42,6 @@ export class CrawlService {
     private readonly logger: AppLoggerService,
     private readonly metrics: MetricsService,
     private readonly mockApi: MockDouyinApi,
-    private readonly jobsService: JobsService,
     @InjectQueue(QUEUE_NAMES.CRAWL) private readonly crawlQueue: Queue,
     @InjectQueue(QUEUE_NAMES.PROCESS) private readonly processQueue: Queue,
   ) {
@@ -204,7 +202,7 @@ export class CrawlService {
 
   async enqueueTopVideos(videos: PersistedVideo[]): Promise<number> {
     for (const video of videos) {
-      const queueJob = await this.processQueue.add(
+      await this.processQueue.add(
         JOB_NAMES.PROCESS_VIDEO,
         { videoId: video.id },
         {
@@ -215,14 +213,6 @@ export class CrawlService {
           },
         },
       );
-
-      await this.jobsService.createJob({
-        queueJobId: String(queueJob.id ?? ''),
-        jobType: 'PROCESS',
-        payload: { videoId: video.id },
-        videoId: video.id,
-        maxAttempts: this.retryAttempts,
-      });
     }
 
     this.metrics.incrementCounter('queue.process.enqueued', videos.length);

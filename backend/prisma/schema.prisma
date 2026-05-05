@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VideoStatus {
+  NEW
+  QUEUED
+  PROCESSING
+  PROCESSED
+  PUBLISHED
+  FAILED
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  RETRYING
+}
+
+enum JobType {
+  CRAWL
+  PROCESS
+  CAPTION
+  PUBLISH
+}
+
+model Video {
+  id             String           @id @default(cuid())
+  sourceVideoId  String?          @unique
+  sourceUrl      String           @unique
+  likeCount      Int
+  commentCount   Int
+  score          Float            @default(0)
+  description    String
+  status         VideoStatus      @default(NEW)
+  selectedTop20  Boolean          @default(false)
+  crawlBatchId   String?
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  processedVideos ProcessedVideo[]
+  captions        Caption[]
+  jobs            Job[]
+
+  @@index([score, createdAt])
+  @@index([selectedTop20])
+  @@map("videos")
+}
+
+model ProcessedVideo {
+  id                String    @id @default(cuid())
+  videoId           String
+  originalPath      String
+  processedPath     String
+  watermarkRemoved  Boolean   @default(false)
+  trimStartSec      Int
+  trimDurationSec   Int
+  width             Int?
+  height            Int?
+  subtitlePlaceholder String?
+  processingMeta    Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  video             Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@map("processed_videos")
+}
+
+model Caption {
+  id               String   @id @default(cuid())
+  videoId          String
+  variant          Int
+  content          String
+  openaiModel      String?
+  engagementScore  Float    @default(0)
+  impressions      Int      @default(0)
+  clicks           Int      @default(0)
+  posts            Int      @default(0)
+  isBest           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  video            Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, variant])
+  @@index([videoId, isBest])
+  @@map("captions")
+}
+
+model Job {
+  id             String    @id @default(cuid())
+  queueJobId     String?
+  jobType        JobType
+  status         JobStatus @default(PENDING)
+  attempt        Int       @default(0)
+  maxAttempts    Int       @default(3)
+  payload        Json?
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  videoId        String?
+
+  video          Video?    @relation(fields: [videoId], references: [id], onDelete: SetNull)
+
+  @@index([jobType, status, createdAt])
+  @@index([videoId])
+  @@map("jobs")
+}

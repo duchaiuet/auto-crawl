@@ -1,130 +1,171 @@
-# Douyin -> Translate -> TikTok Pipeline
+# Short Video Automation Pipeline (NestJS)
 
-Pipeline module hoa de:
+Production-ready backend for automating short-video processing and publishing.
 
-1. Crawl video tu Douyin (qua `yt-dlp`)
-2. Tao transcript (Whisper CLI hoac mock)
-3. Dich noi dung (mock hoac LibreTranslate)
-4. Tao subtitle `.srt` va burn subtitle vao video (ffmpeg)
-5. Dang len TikTok (mac dinh dry-run an toan)
+## Tech stack
 
-## Kien truc module
+- Node.js + NestJS
+- PostgreSQL + Prisma ORM
+- Redis + BullMQ
+- FFmpeg (with fallback in environments without ffmpeg)
+- OpenAI API for caption generation
+
+## Implemented features
+
+### 1) Video crawling module
+- Mock Douyin-like crawler provides:
+  - `id`
+  - `url`
+  - `like_count`
+  - `comment_count`
+  - `description`
+- Filtering:
+  - `like_count > 50_000`
+  - `comment_count > 5_000`
+- Scoring:
+  - `score = like_count * 0.7 + comment_count * 0.3`
+- Top selection:
+  - Only top 20% are pushed to processing queue
+
+### 2) Video download worker
+- Mock download from URL to local storage path
+- Worker persists local file path
+- Watermark removal strategy supported via crop flag (`CROP_WATERMARK`)
+
+### 3) Video processing module
+- FFmpeg pipeline:
+  - random trim segment (10-20s)
+  - resize to 9:16
+  - add subtitle placeholder
+- Output processed video record
+
+### 4) Caption generation
+- OpenAI integration via `responses.create`
+- Input: original video description
+- Output:
+  - 3 Vietnamese caption variants
+  - under 100 chars (normalized)
+  - with hook-first behavior
+- Includes fallback generator if API key is missing/error
+
+### 5) Queue system
+- Queues:
+  - `crawl_queue`
+  - `process_queue`
+  - `publish_queue`
+- Flow:
+  - `crawl -> process -> caption -> publish`
+  - caption step is executed inside process worker before publish enqueue
+
+### 6) Scheduler
+- Cron every 6 hours via Nest Schedule
+- Auto-enqueue crawl job if `SCHEDULER_ENABLED=true`
+
+### 7) Publish module (mock)
+- Simulate posting to TikTok
+- Log processed video + caption
+- Mark video status as `PUBLISHED`
+
+### 8) Database schema
+Prisma models:
+- `videos`
+- `processed_videos`
+- `captions`
+- `jobs`
+
+### 9) API
+- `GET /videos`
+- `GET /processed`
+- `POST /trigger-crawl`
+- `GET /monitoring/summary`
+
+### 10) Reliability + ops
+- Modular NestJS structure (modules/services/dto/processors)
+- Queue retry with exponential backoff
+- DB job tracking with status transitions
+- Metrics service + monitoring endpoint
+- Concurrent workers on queue processors
+
+## A/B testing behavior
+
+- Each video generates 3 caption variants
+- Publish queue enqueues each variant
+- Variant performance fields tracked:
+  - impressions
+  - clicks
+  - posts
+  - engagement_score
+- Best variant selected by score:
+  - `ctr * 0.6 + engagement_score * 0.4 + posts * 0.1`
+
+## Project structure
 
 ```text
-src/douyin_tiktok_pipeline/
-  core/
-    config.py           # Env + duong dan + runtime flags
-    models.py           # Dataclasses cho assets va result
-    errors.py           # Nhom exceptions cua pipeline
-  crawler/
-    douyin.py           # DouyinCrawler (yt-dlp)
-  processor/
-    transcriber.py      # WhisperTranscriber, MockTranscriber
-    translator.py       # LibreTranslateTranslator, MockTranslator
-    subtitle_renderer.py# Render subtitle SRT
-    video_processor.py  # Burn subtitle/copy video bang ffmpeg
-  publisher/
-    tiktok.py           # TikTokPublisher (dry-run + placeholder upload)
-  pipeline/
-    workflow.py         # PipelineOrchestrator
-  cli.py                # Command line entrypoint
+backend/
+  prisma/
+    schema.prisma
+  src/
+    app.module.ts
+    main.ts
+    config/
+      env.validation.ts
+    prisma/
+      prisma.module.ts
+      prisma.service.ts
+    common/
+      logging/
+      monitoring/
+      utils/
+    queues/
+      queue.module.ts
+      constants/queue.constants.ts
+    crawl/
+    processing/
+    captions/
+    publish/
+    jobs/
+      processors/
+    videos/
+    scheduler/
 ```
 
-## Cai dat
+## Environment
 
-Yeu cau:
+Use `backend/.env.example` as reference:
 
-- Python >= 3.10
-- `yt-dlp`
-- `ffmpeg`
-- Neu dung transcriber that: `openai-whisper` CLI (`whisper`)
+- `DATABASE_URL`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`
+- `OPENAI_API_KEY`, `OPENAI_MODEL`
+- `VIDEO_STORAGE_DIR`
+- `CRAWL_BATCH_SIZE`
+- `WORKER_CONCURRENCY`
+- `MAX_JOB_ATTEMPTS`
+- `JOB_RETRY_BACKOFF_MS`
+- `CRAWL_INTERVAL_HOURS`
+- `CRAWL_MIN_LIKES`
+- `CRAWL_MIN_COMMENTS`
+- `TOP_PERCENT`
+- `CROP_WATERMARK`
+- `SCHEDULER_ENABLED`
+
+## Local run
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+cd backend
+npm install
+npm run prisma:generate
+npm run build
+npm run start:dev
 ```
 
-## Bien moi truong
-
-| Bien | Mac dinh | Mo ta |
-|---|---|---|
-| `DRY_RUN` | `true` | Khong dang that len TikTok |
-| `TARGET_LANG` | `vi` | Ngon ngu dich dich den |
-| `TRANSCRIPT_LANG` | `auto` | Ngon ngu dau vao cho Whisper |
-| `TRANSCRIBER_MODE` | `whisper` | `whisper` hoac `mock` |
-| `TRANSLATOR_MODE` | `mock` | `mock` hoac `libretranslate` |
-| `LIBRETRANSLATE_URL` | - | Bat buoc neu `TRANSLATOR_MODE=libretranslate` |
-| `LIBRETRANSLATE_API_KEY` | - | API key cho LibreTranslate (neu can) |
-| `YT_DLP_BINARY` | `yt-dlp` | Duong dan binary yt-dlp |
-| `WHISPER_BINARY` | `whisper` | Duong dan binary whisper |
-| `WHISPER_MODEL` | `small` | Whisper model |
-| `FFMPEG_BINARY` | `ffmpeg` | Duong dan binary ffmpeg |
-| `TIKTOK_SESSION_ID` | - | Session id de publish that |
-| `TIKTOK_PUBLISH_ENDPOINT` | TikTok Open API URL | Endpoint upload |
-| `BURN_SUBTITLES` | `true` | Burn subtitle vao video output |
-| `KEEP_INTERMEDIATE` | `false` | Giu file tam (hien chua dung sau pipeline) |
-
-## Chay CLI
-
-### 1) Dry run (khuyen nghi test truoc)
+Trigger crawl:
 
 ```bash
-douyin-pipeline \
-  --url "https://www.douyin.com/video/xxxxxxxxxxxx" \
-  --caption-template "{translated_text}" \
-  --hashtags trend viet-hoa \
-  --dry-run
+curl -X POST http://localhost:3000/trigger-crawl \
+  -H "Content-Type: application/json" \
+  -d '{"batchSize": 30, "source": "manual"}'
 ```
 
-### 1.1) Chay nhanh Trung -> Viet
+## Bonus dashboard
 
-```bash
-douyin-pipeline \
-  --url "https://www.douyin.com/video/xxxxxxxxxxxx" \
-  --caption-template "{translated_text}" \
-  --hashtags viet-hoa \
-  --zh-to-vi \
-  --dry-run
-```
-
-Hoac chi dinh thu cong:
-
-```bash
-douyin-pipeline \
-  --url "https://www.douyin.com/video/xxxxxxxxxxxx" \
-  --source-lang zh \
-  --target-lang vi \
-  --dry-run
-```
-
-### 2) Publish that len TikTok
-
-```bash
-export DRY_RUN=false
-export TIKTOK_SESSION_ID="your-session-id"
-
-douyin-pipeline \
-  --url "https://www.douyin.com/video/xxxxxxxxxxxx" \
-  --caption-template "{source_title} | {translated_text}" \
-  --hashtags trend remix \
-  --publish
-```
-
-## Output
-
-Sau moi lan chay, pipeline tao cac file trong `output/`:
-
-- `downloads/<request_id>/source.mp4`
-- `downloads/<request_id>/metadata.json`
-- `subtitles/<request_id>.srt`
-- `translated/<request_id>.mp4`
-- `reports/<request_id>.json`
-
-`report` chua toan bo thong tin: video da tai, transcript, translation, subtitle path, publish result.
-
-## Luu y phap ly va ban quyen
-
-- Ban can tuan thu Terms of Service cua Douyin va TikTok.
-- Chi nen su dung video co quyen tai su dung / da duoc phep.
-- Neu dang lai noi dung cua nguoi khac, can xem xet quyen tac gia va attribution phu hop.
+Simple dashboard module was not implemented in this iteration; monitoring endpoint and API data are ready for a Next.js dashboard integration.
